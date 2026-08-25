@@ -136,6 +136,14 @@ void test('board creation operations run serially', async () => {
   assert.deepEqual(events, ['first-start', 'first-end', 'second']);
 });
 
+void test('serial executor recovers after rejection', async () => {
+  const executor = new SerialExecutor();
+  const first = executor.run(async () => { throw new Error('expected'); });
+  const second = executor.run(async () => 'ok');
+  await assert.rejects(first, /expected/);
+  assert.equal(await second, 'ok');
+});
+
 void test('board filters do not match sibling folder prefixes', () => {
   const folder = `${DEFAULT_WORKSPACE_ROOT}/board`;
   assert.equal(isPathWithinWorkspace(`${folder}/Inbox.md`, folder), true);

@@ -1,6 +1,6 @@
 {
     "name": "worktrack-spatial-task-graph",
-    "version": "1.1.2-worktrack.1",
+    "version": "1.1.2-worktrack.2",
     "description": "Visualize markdown tasks on an infinite canvas with auto-layout, mind-map style connections, Apple-style UI, and two-way sync.",
     "main": "main.js",
     "type": "module",
