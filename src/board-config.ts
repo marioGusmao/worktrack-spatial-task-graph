@@ -43,6 +43,16 @@ export interface TaskGraphSettings {
   autoFitAfterLayout: boolean;
 }
 
+export class SerialExecutor {
+  private tail: Promise<void> = Promise.resolve();
+
+  run<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(operation);
+    this.tail = result.then(() => undefined, () => undefined);
+    return result;
+  }
+}
+
 type LegacyGraphBoard = Omit<GraphBoard, 'source'> & { source?: Partial<BoardSource> };
 type LegacySettings = Omit<Partial<TaskGraphSettings>, 'boards'> & { boards?: LegacyGraphBoard[] };
 

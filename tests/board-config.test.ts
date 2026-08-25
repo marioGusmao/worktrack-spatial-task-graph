@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   DEFAULT_WORKSPACE_ROOT,
+  SerialExecutor,
   createBoardDefinition,
   createBoardDefinitionWithAvailableFolder,
   ensureBoardStorage,
@@ -119,6 +120,20 @@ void test('existing in-root board folders are preserved during migration', () =>
     folder: `${DEFAULT_WORKSPACE_ROOT}/Hermes`,
     inboxFile: `${DEFAULT_WORKSPACE_ROOT}/Hermes/Inbox.md`,
   });
+});
+
+void test('board creation operations run serially', async () => {
+  const executor = new SerialExecutor();
+  const events: string[] = [];
+  let releaseFirst!: () => void;
+  const gate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const first = executor.run(async () => { events.push('first-start'); await gate; events.push('first-end'); });
+  const second = executor.run(async () => { events.push('second'); });
+  await Promise.resolve();
+  assert.deepEqual(events, ['first-start']);
+  releaseFirst();
+  await Promise.all([first, second]);
+  assert.deepEqual(events, ['first-start', 'first-end', 'second']);
 });
 
 void test('board filters do not match sibling folder prefixes', () => {

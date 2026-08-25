@@ -2,6 +2,7 @@ import { Plugin, WorkspaceLeaf, TFile, debounce, Notice } from 'obsidian';
 import { TaskGraphView, VIEW_TYPE_TASK_GRAPH } from './TaskGraphView';
 import { TaskGraphSettingTab } from './settings';
 import {
+    SerialExecutor,
     createBoardDefinitionWithAvailableFolder,
     ensureBoardStorage as ensureBoardStorageFiles,
     isPathWithinWorkspace,
@@ -31,6 +32,7 @@ export default class TaskGraphPlugin extends Plugin {
     taskCache: Map<string, TaskCacheItem[]> = new Map();
     isCacheInitialized: boolean = false;
     cacheGeneration: number = 0;
+    private boardCreationExecutor = new SerialExecutor();
 
 	debouncedRefresh = debounce(() => {
 		if (this.viewRefresh) this.viewRefresh();
@@ -240,11 +242,13 @@ export default class TaskGraphPlugin extends Plugin {
         }
     }
 
-    async createBoard(name: string): Promise<GraphBoard> {
+    async createBoard(name?: string): Promise<GraphBoard> {
+        return this.boardCreationExecutor.run(async () => {
+        const boardName = name?.trim() || `Board ${this.settings.boards.length + 1}`;
         const occupiedFolders = new Set(this.settings.boards.map((board) => board.source.folder));
         const board = await createBoardDefinitionWithAvailableFolder({
-            id: Date.now().toString(),
-            name,
+            id: `${Date.now()}-${this.settings.boards.length}`,
+            name: boardName,
             workspaceRoot: this.settings.workspaceRoot,
             occupiedFolders,
         }, (path) => this.app.vault.adapter.exists(path));
@@ -253,6 +257,7 @@ export default class TaskGraphPlugin extends Plugin {
         this.settings.lastActiveBoardId = board.id;
         await this.saveSettings();
         return board;
+        });
     }
 
 	async activateView() {

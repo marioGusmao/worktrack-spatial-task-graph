@@ -816,8 +816,7 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
   const handleSwitchBoard = (id: string) => { setActiveBoardId(id); plugin.settings.lastActiveBoardId = id; void plugin.saveSettings(); };
   
   const handleAddBoard = async () => {
-      const name = `Board ${plugin.settings.boards.length + 1}`;
-      const newBoard = await plugin.createBoard(name);
+      const newBoard = await plugin.createBoard();
       setActiveBoardId(newBoard.id);
       setRefreshKey(prev => prev + 1);
   };
