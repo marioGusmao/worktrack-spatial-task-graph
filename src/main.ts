@@ -1,9 +1,16 @@
 import { Plugin, WorkspaceLeaf, TFile, debounce, Notice } from 'obsidian';
-import type { Edge, Viewport } from 'reactflow';
 import { TaskGraphView, VIEW_TYPE_TASK_GRAPH } from './TaskGraphView';
 import { TaskGraphSettingTab } from './settings';
+import {
+    createBoardDefinition,
+    ensureBoardStorage as ensureBoardStorageFiles,
+    isPathWithinWorkspace,
+    migrateSettings,
+    type GraphBoard,
+    type TaskGraphSettings,
+} from './board-config';
 
-export interface TextNodeData { id: string; text: string; x: number; y: number; }
+export type { GraphBoard } from './board-config';
 
 export interface TaskCacheItem {
     id: string;
@@ -17,32 +24,9 @@ export interface TaskCacheItem {
     rawText: string;
 }
 
-export interface GraphBoard {
-	id: string; name: string;
-	filters: { tags: string[]; excludeTags: string[]; folders: string[]; status: string[]; tagMode?: 'AND' | 'OR'; };
-	data: { layout: Record<string, { x: number, y: number }>; edges: Edge[]; nodeStatus: Record<string, string>; textNodes: TextNodeData[]; viewport?: Viewport; }
-}
-
-interface TaskGraphSettings { 
-    boards: GraphBoard[]; 
-    lastActiveBoardId: string; 
-    autoFitAfterLayout: boolean; // 新增：排版后是否自动缩放
-}
-
 interface CachedFilesMetadataCache {
     getCachedFiles(): string[];
 }
-
-const DEFAULT_BOARD: GraphBoard = {
-	id: 'default', name: 'Main board',
-	filters: { tags: [], excludeTags: [], folders: [], status: [' ', '/'], tagMode: 'OR' },
-	data: { layout: {}, edges: [], nodeStatus: {}, textNodes: [] }
-};
-const DEFAULT_SETTINGS: TaskGraphSettings = { 
-    boards: [DEFAULT_BOARD], 
-    lastActiveBoardId: 'default',
-    autoFitAfterLayout: true // 默认开启
-};
 
 export default class TaskGraphPlugin extends Plugin {
 	settings: TaskGraphSettings;
@@ -57,6 +41,7 @@ export default class TaskGraphPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+        await this.ensureBoardStorageForAll();
         
         this.addSettingTab(new TaskGraphSettingTab(this.app, this));
 
@@ -112,7 +97,7 @@ export default class TaskGraphPlugin extends Plugin {
     async initializeCache() {
         const cachedPaths = (this.app.metadataCache as unknown as CachedFilesMetadataCache).getCachedFiles();
         for (const path of cachedPaths) {
-            if (!path.endsWith('.md')) continue;
+            if (!path.endsWith('.md') || !isPathWithinWorkspace(path, this.settings.workspaceRoot)) continue;
             const file = this.app.vault.getAbstractFileByPath(path);
             if (file instanceof TFile) {
                 await this.updateFileCache(file, false);
@@ -123,7 +108,13 @@ export default class TaskGraphPlugin extends Plugin {
     }
 
     async updateFileCache(file: import('obsidian').TAbstractFile, triggerRefresh = true) {
-        if (!(file instanceof TFile) || file.extension !== 'md') return;
+        if (!(file instanceof TFile) || file.extension !== 'md' || !isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) {
+            if (this.taskCache.has(file.path)) {
+                this.taskCache.delete(file.path);
+                if (triggerRefresh && this.isCacheInitialized) this.debouncedRefresh();
+            }
+            return;
+        }
         
         const cache = this.app.metadataCache.getFileCache(file);
         if (!cache || !cache.listItems) {
@@ -216,17 +207,45 @@ export default class TaskGraphPlugin extends Plugin {
 	onunload() { }
 
 	async loadSettings() {
-        // 使用类型断言将 any 显式收敛为我们的目标类型
         const loadedData = (await this.loadData()) as Partial<TaskGraphSettings> | null;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData);
-		if (!this.settings.boards || this.settings.boards.length === 0) {
-			this.settings.boards = [DEFAULT_BOARD];
-		}
+        this.settings = migrateSettings(loadedData);
+        if (JSON.stringify(loadedData) !== JSON.stringify(this.settings)) {
+            await this.saveSettings();
+        }
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+    async ensureBoardStorage(board: GraphBoard) {
+        await ensureBoardStorageFiles({
+            exists: (path) => this.app.vault.adapter.exists(path),
+            createFolder: async (path) => { await this.app.vault.createFolder(path); },
+            createFile: async (path, content) => { await this.app.vault.create(path, content); },
+        }, board);
+    }
+
+    async ensureBoardStorageForAll() {
+        for (const board of this.settings.boards) {
+            await this.ensureBoardStorage(board);
+        }
+    }
+
+    async createBoard(name: string): Promise<GraphBoard> {
+        const occupiedFolders = new Set(this.settings.boards.map((board) => board.source.folder));
+        const board = createBoardDefinition({
+            id: Date.now().toString(),
+            name,
+            workspaceRoot: this.settings.workspaceRoot,
+            occupiedFolders,
+        });
+        await this.ensureBoardStorage(board);
+        this.settings.boards.push(board);
+        this.settings.lastActiveBoardId = board.id;
+        await this.saveSettings();
+        return board;
+    }
 
 	async activateView() {
 		const { workspace } = this.app;
@@ -368,7 +387,7 @@ export default class TaskGraphPlugin extends Plugin {
 		const filters = board.filters;
         
 		const connectedTaskIds = new Set<string>();
-		board.data.edges.forEach((e: Edge) => { 
+		board.data.edges.forEach((e) => {
 			connectedTaskIds.add(e.source);
 			connectedTaskIds.add(e.target);
 		});

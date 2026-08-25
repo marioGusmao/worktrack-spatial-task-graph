@@ -1,12 +1,14 @@
 {
-    "name": "spatial-task-graph",
-    "version": "1.1.2",
+    "name": "worktrack-spatial-task-graph",
+    "version": "1.1.2-worktrack.1",
     "description": "Visualize markdown tasks on an infinite canvas with auto-layout, mind-map style connections, Apple-style UI, and two-way sync.",
     "main": "main.js",
     "type": "module",
     "scripts": {
         "dev": "node esbuild.config.mjs",
         "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+        "test": "node --test tests/*.test.ts",
+        "check": "npm run test && npm run lint && npm run build",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "lint": "eslint ."
     },
