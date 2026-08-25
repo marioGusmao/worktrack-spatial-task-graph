@@ -13,5 +13,5 @@ void test('downstream plugin has an identity distinct from the community plugin'
   assert.equal(manifest.id, 'worktrack-spatial-task-graph');
   assert.equal(manifest.name, 'Spatial Task Graph — WorkTrack');
   assert.equal(manifest.version, '1.1.2-worktrack.1');
-  assert.equal(manifest.authorUrl, 'https://github.com/marioGusmao/spatial-task-graph');
+  assert.equal(manifest.authorUrl, 'https://github.com/marioGusmao/worktrack-spatial-task-graph');
 });

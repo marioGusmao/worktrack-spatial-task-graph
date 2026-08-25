@@ -53,6 +53,9 @@ export function normalizeVaultPath(path: string): string {
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0 && segment !== '.');
 
+  if (segments.length === 0) {
+    throw new Error('Vault paths cannot be empty.');
+  }
   if (segments.some((segment) => segment === '..')) {
     throw new Error('Vault paths cannot contain parent-directory segments.');
   }
@@ -174,16 +177,22 @@ export const DEFAULT_SETTINGS: TaskGraphSettings = {
 };
 
 export function migrateSettings(input: LegacySettings | null | undefined): TaskGraphSettings {
-  const workspaceRoot = normalizeVaultPath(input?.workspaceRoot || DEFAULT_WORKSPACE_ROOT);
+  const workspaceRoot = DEFAULT_WORKSPACE_ROOT;
   const legacyBoards = input?.boards && input.boards.length > 0 ? input.boards : [DEFAULT_BOARD];
   const occupiedFolders = new Set<string>();
 
   const boards = legacyBoards.map((legacyBoard, index) => {
     const configuredFolder = legacyBoard.source?.folder || legacyBoard.filters?.folders?.[0];
     let folder: string;
+    let normalizedConfiguredFolder: string | undefined;
+    try {
+      normalizedConfiguredFolder = configuredFolder ? normalizeVaultPath(configuredFolder) : undefined;
+    } catch {
+      normalizedConfiguredFolder = undefined;
+    }
 
-    if (configuredFolder && isPathWithinWorkspace(configuredFolder, workspaceRoot)) {
-      folder = normalizeVaultPath(configuredFolder);
+    if (normalizedConfiguredFolder && isPathWithinWorkspace(normalizedConfiguredFolder, workspaceRoot)) {
+      folder = normalizedConfiguredFolder;
     } else if (legacyBoard.id === 'default' || index === 0) {
       folder = workspaceRoot;
     } else {
@@ -192,8 +201,14 @@ export function migrateSettings(input: LegacySettings | null | undefined): TaskG
     occupiedFolders.add(folder);
 
     const configuredInbox = legacyBoard.source?.inboxFile;
-    const inboxFile = configuredInbox && isPathWithinWorkspace(configuredInbox, folder)
-      ? normalizeVaultPath(configuredInbox)
+    let normalizedInbox: string | undefined;
+    try {
+      normalizedInbox = configuredInbox ? normalizeVaultPath(configuredInbox) : undefined;
+    } catch {
+      normalizedInbox = undefined;
+    }
+    const inboxFile = normalizedInbox && isPathWithinWorkspace(normalizedInbox, folder)
+      ? normalizedInbox
       : `${folder}/Inbox.md`;
 
     return {

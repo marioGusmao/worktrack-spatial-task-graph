@@ -5,6 +5,6 @@
   "minAppVersion": "1.4.16",
   "description": "WorkTrack-maintained Spatial Task Graph with scoped indexing and board-owned Markdown storage.",
   "author": "TriumphC; WorkTrack fork maintained by Mário Gusmão",
-  "authorUrl": "https://github.com/marioGusmao/spatial-task-graph",
+  "authorUrl": "https://github.com/marioGusmao/worktrack-spatial-task-graph",
   "isDesktopOnly": true
 }

@@ -574,9 +574,9 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
           data: { id: tn.id, label: tn.text, onSave: handleSaveTextNode }
       }));
 
-      // 泛型合并后自动转推为 Node<AppNodeData>[]，消灭强制断言
+      const visibleNodeIds = new Set([...taskNodes, ...textNodes].map((node) => node.id));
       setNodes([...taskNodes, ...textNodes] as AppNode[]);
-      setEdges(savedEdges);
+      setEdges(savedEdges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)));
 
       if (prevBoardIdRef.current !== activeBoardId) {
           const savedViewport = boardConfig?.data.viewport;

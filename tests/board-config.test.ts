@@ -7,9 +7,19 @@ import {
   ensureBoardStorage,
   isPathWithinWorkspace,
   migrateSettings,
+  normalizeVaultPath,
   storageDirectories,
   uniqueBoardFolder,
 } from '../src/board-config.ts';
+
+void test('workspace paths reject traversal', () => {
+  assert.throws(() => normalizeVaultPath('../Secrets'));
+});
+
+void test('persisted workspace roots cannot expand the indexing boundary', () => {
+  const migrated = migrateSettings({ workspaceRoot: 'Private notes' });
+  assert.equal(migrated.workspaceRoot, DEFAULT_WORKSPACE_ROOT);
+});
 
 void test('default workspace is isolated from the rest of the vault', () => {
   assert.equal(DEFAULT_WORKSPACE_ROOT, 'Sub pastas/Spatial Task Graph');

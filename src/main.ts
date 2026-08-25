@@ -24,16 +24,13 @@ export interface TaskCacheItem {
     rawText: string;
 }
 
-interface CachedFilesMetadataCache {
-    getCachedFiles(): string[];
-}
-
 export default class TaskGraphPlugin extends Plugin {
 	settings: TaskGraphSettings;
 	viewRefresh?: () => void;
     
     taskCache: Map<string, TaskCacheItem[]> = new Map();
     isCacheInitialized: boolean = false;
+    cacheGeneration: number = 0;
 
 	debouncedRefresh = debounce(() => {
 		if (this.viewRefresh) this.viewRefresh();
@@ -75,18 +72,26 @@ export default class TaskGraphPlugin extends Plugin {
             void this.updateFileCache(file);
         }));
         this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-            if (this.taskCache.has(oldPath)) {
-                const tasks = this.taskCache.get(oldPath);
-                this.taskCache.delete(oldPath);
-                if (tasks) this.taskCache.set(file.path, tasks);
-                this.debouncedRefresh();
+            let removed = false;
+            for (const cachedPath of this.taskCache.keys()) {
+                if (cachedPath === oldPath || cachedPath.startsWith(`${oldPath}/`)) {
+                    this.taskCache.delete(cachedPath);
+                    removed = true;
+                }
             }
+            if (removed) this.debouncedRefresh();
+            if (file instanceof TFile) void this.updateFileCache(file);
+            else void this.initializeCache();
         }));
         this.registerEvent(this.app.vault.on('delete', (file) => {
-            if (this.taskCache.has(file.path)) {
-                this.taskCache.delete(file.path);
-                this.debouncedRefresh();
+            let removed = false;
+            for (const cachedPath of this.taskCache.keys()) {
+                if (cachedPath === file.path || cachedPath.startsWith(`${file.path}/`)) {
+                    this.taskCache.delete(cachedPath);
+                    removed = true;
+                }
             }
+            if (removed) this.debouncedRefresh();
         }));
         
         this.app.workspace.onLayoutReady(() => {
@@ -95,19 +100,21 @@ export default class TaskGraphPlugin extends Plugin {
 	}
 
     async initializeCache() {
-        const cachedPaths = (this.app.metadataCache as unknown as CachedFilesMetadataCache).getCachedFiles();
-        for (const path of cachedPaths) {
-            if (!path.endsWith('.md') || !isPathWithinWorkspace(path, this.settings.workspaceRoot)) continue;
-            const file = this.app.vault.getAbstractFileByPath(path);
-            if (file instanceof TFile) {
-                await this.updateFileCache(file, false);
-            }
+        const generation = ++this.cacheGeneration;
+        this.isCacheInitialized = false;
+        this.taskCache.clear();
+        const files = this.app.vault.getMarkdownFiles();
+        for (const file of files) {
+            if (!isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) continue;
+            await this.updateFileCache(file, false, generation);
+            if (generation !== this.cacheGeneration) return;
         }
         this.isCacheInitialized = true;
         this.debouncedRefresh();
     }
 
-    async updateFileCache(file: import('obsidian').TAbstractFile, triggerRefresh = true) {
+    async updateFileCache(file: import('obsidian').TAbstractFile, triggerRefresh = true, generation = this.cacheGeneration) {
+        if (generation !== this.cacheGeneration) return;
         if (!(file instanceof TFile) || file.extension !== 'md' || !isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) {
             if (this.taskCache.has(file.path)) {
                 this.taskCache.delete(file.path);
@@ -198,6 +205,7 @@ export default class TaskGraphPlugin extends Plugin {
             });
         }
 
+        if (generation !== this.cacheGeneration || !isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) return;
         this.taskCache.set(file.path, tasks);
         if (triggerRefresh && this.isCacheInitialized) {
             this.debouncedRefresh();
