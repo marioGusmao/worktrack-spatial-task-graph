@@ -513,18 +513,27 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
   
   const reactFlowInstance = useReactFlow();
   const debouncedSaveBoardData = React.useMemo(
-      () => Promise.resolve(debounce((boardId: string, data: Partial<GraphBoard['data']>) => {
+      () => debounce((boardId: string, data: Partial<GraphBoard['data']>) => {
           void plugin.saveBoardData(boardId, data);
-      }, 800, true)),
+      }, 800, true),
       [plugin]
   );
+
+  React.useEffect(() => () => {
+      debouncedSaveBoardData.run();
+      debouncedSaveBoardData.cancel();
+  }, [debouncedSaveBoardData]);
   const connectionStartRef = React.useRef<Partial<OnConnectStartParams>>({});
   const connectionMadeRef = React.useRef(false);
 
   const activeBoard = plugin.settings.boards.find(b => b.id === activeBoardId) || plugin.settings.boards[0];
 
-  React.useEffect(() => { 
-      plugin.viewRefresh = () => setRefreshKey(prev => prev + 1); 
+  React.useEffect(() => {
+      const refresh = () => setRefreshKey(prev => prev + 1);
+      plugin.viewRefresh = refresh;
+      return () => {
+          if (plugin.viewRefresh === refresh) plugin.viewRefresh = undefined;
+      };
   }, [plugin]);
 
   React.useEffect(() => {
@@ -688,7 +697,7 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
       const board = plugin.settings.boards.find(b => b.id === activeBoardId);
       if (board) {
           board.data.viewport = viewport;
-          void debouncedSaveBoardData.then(save => save(activeBoardId, { viewport }));
+          debouncedSaveBoardData(activeBoardId, { viewport });
       }
   }, [plugin, activeBoardId, debouncedSaveBoardData]);
 
@@ -745,15 +754,13 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
       const board = plugin.settings.boards.find(b => b.id === activeBoardId); 
       if(!board) return; 
       
-      void debouncedSaveBoardData.then(save => {
-          if (node.type === 'task') { 
-              const layout = { ...board.data.layout, [node.id]: node.position }; 
-              save(activeBoardId, { layout }); 
-          } else if (node.type === 'text') { 
-              const textNodes = board.data.textNodes.map(tn => tn.id === node.id ? { ...tn, x: node.position.x, y: node.position.y } : tn); 
-              save(activeBoardId, { textNodes }); 
-          }
-      });
+      if (node.type === 'task') {
+          const layout = { ...board.data.layout, [node.id]: node.position };
+          debouncedSaveBoardData(activeBoardId, { layout });
+      } else if (node.type === 'text') {
+          const textNodes = board.data.textNodes.map(tn => tn.id === node.id ? { ...tn, x: node.position.x, y: node.position.y } : tn);
+          debouncedSaveBoardData(activeBoardId, { textNodes });
+      }
   }, [plugin, activeBoardId, debouncedSaveBoardData]);
   
   const handleSaveTextNode = async (id: string, text: string) => { const board = plugin.settings.boards.find(b => b.id === activeBoardId); if(board) { const textNodes = board.data.textNodes.map(tn => tn.id === id ? { ...tn, text } : tn); await plugin.saveBoardData(activeBoardId, { textNodes }); } };
