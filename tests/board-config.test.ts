@@ -78,6 +78,22 @@ void test('legacy settings migrate without exposing the whole vault', () => {
   assert.equal(migrated.lastActiveBoardId, 'other');
 });
 
+void test('legacy boards sharing one folder are separated during migration', () => {
+  const legacyBoard = {
+    filters: { tags: [], excludeTags: [], folders: [DEFAULT_WORKSPACE_ROOT], status: [' '], tagMode: 'OR' as const },
+    data: { layout: {}, edges: [], nodeStatus: {}, textNodes: [] },
+  };
+  const migrated = migrateSettings({
+    boards: [
+      { id: 'default', name: 'Main board', ...legacyBoard },
+      { id: 'two', name: 'Board 2', ...legacyBoard },
+    ],
+    lastActiveBoardId: 'two',
+  });
+  assert.equal(migrated.boards[0]?.source.folder, DEFAULT_WORKSPACE_ROOT);
+  assert.equal(migrated.boards[1]?.source.folder, `${DEFAULT_WORKSPACE_ROOT}/board-2`);
+});
+
 void test('existing in-root board folders are preserved during migration', () => {
   const migrated = migrateSettings({
     workspaceRoot: DEFAULT_WORKSPACE_ROOT,

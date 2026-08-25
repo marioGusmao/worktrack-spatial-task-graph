@@ -206,9 +206,9 @@ export function migrateSettings(input: LegacySettings | null | undefined): TaskG
       normalizedConfiguredFolder = undefined;
     }
 
-    if (normalizedConfiguredFolder && isPathWithinWorkspace(normalizedConfiguredFolder, workspaceRoot)) {
+    if (normalizedConfiguredFolder && isPathWithinWorkspace(normalizedConfiguredFolder, workspaceRoot) && !occupiedFolders.has(normalizedConfiguredFolder)) {
       folder = normalizedConfiguredFolder;
-    } else if (legacyBoard.id === 'default' || index === 0) {
+    } else if ((legacyBoard.id === 'default' || index === 0) && !occupiedFolders.has(workspaceRoot)) {
       folder = workspaceRoot;
     } else {
       folder = uniqueBoardFolder(workspaceRoot, legacyBoard.name, occupiedFolders);
