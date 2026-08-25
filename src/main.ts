@@ -2,7 +2,7 @@ import { Plugin, WorkspaceLeaf, TFile, debounce, Notice } from 'obsidian';
 import { TaskGraphView, VIEW_TYPE_TASK_GRAPH } from './TaskGraphView';
 import { TaskGraphSettingTab } from './settings';
 import {
-    createBoardDefinition,
+    createBoardDefinitionWithAvailableFolder,
     ensureBoardStorage as ensureBoardStorageFiles,
     isPathWithinWorkspace,
     migrateSettings,
@@ -242,12 +242,12 @@ export default class TaskGraphPlugin extends Plugin {
 
     async createBoard(name: string): Promise<GraphBoard> {
         const occupiedFolders = new Set(this.settings.boards.map((board) => board.source.folder));
-        const board = createBoardDefinition({
+        const board = await createBoardDefinitionWithAvailableFolder({
             id: Date.now().toString(),
             name,
             workspaceRoot: this.settings.workspaceRoot,
             occupiedFolders,
-        });
+        }, (path) => this.app.vault.adapter.exists(path));
         await this.ensureBoardStorage(board);
         this.settings.boards.push(board);
         this.settings.lastActiveBoardId = board.id;
@@ -404,7 +404,7 @@ export default class TaskGraphPlugin extends Plugin {
 
         for (const [path, fileTasks] of this.taskCache.entries()) {
             
-            if (filters.folders.length > 0 && !filters.folders.some(folder => path.startsWith(folder))) {
+            if (filters.folders.length > 0 && !filters.folders.some(folder => isPathWithinWorkspace(path, folder))) {
                 continue;
             }
 

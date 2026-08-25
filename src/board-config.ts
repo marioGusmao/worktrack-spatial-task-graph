@@ -123,13 +123,15 @@ export async function ensureBoardStorage(host: BoardStorageHost, board: GraphBoa
   }
 }
 
-export function createBoardDefinition(options: {
+export interface CreateBoardDefinitionOptions {
   id: string;
   name: string;
   workspaceRoot: string;
   occupiedFolders?: ReadonlySet<string>;
   folder?: string;
-}): GraphBoard {
+}
+
+export function createBoardDefinition(options: CreateBoardDefinitionOptions): GraphBoard {
   const occupied = options.occupiedFolders ?? new Set<string>();
   const folder = options.folder
     ? normalizeVaultPath(options.folder)
@@ -160,6 +162,19 @@ export function createBoardDefinition(options: {
       textNodes: [],
     },
   };
+}
+
+export async function createBoardDefinitionWithAvailableFolder(
+  options: CreateBoardDefinitionOptions,
+  pathExists: (path: string) => Promise<boolean>,
+): Promise<GraphBoard> {
+  const occupied = new Set(options.occupiedFolders ?? []);
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const board = createBoardDefinition({ ...options, occupiedFolders: occupied });
+    if (!await pathExists(board.source.folder)) return board;
+    occupied.add(board.source.folder);
+  }
+  throw new Error('Could not allocate a unique board folder.');
 }
 
 export const DEFAULT_BOARD: GraphBoard = createBoardDefinition({

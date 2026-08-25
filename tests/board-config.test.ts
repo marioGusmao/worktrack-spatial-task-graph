@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   DEFAULT_WORKSPACE_ROOT,
   createBoardDefinition,
+  createBoardDefinitionWithAvailableFolder,
   ensureBoardStorage,
   isPathWithinWorkspace,
   migrateSettings,
@@ -102,6 +103,23 @@ void test('existing in-root board folders are preserved during migration', () =>
     folder: `${DEFAULT_WORKSPACE_ROOT}/Hermes`,
     inboxFile: `${DEFAULT_WORKSPACE_ROOT}/Hermes/Inbox.md`,
   });
+});
+
+void test('board filters do not match sibling folder prefixes', () => {
+  const folder = `${DEFAULT_WORKSPACE_ROOT}/board`;
+  assert.equal(isPathWithinWorkspace(`${folder}/Inbox.md`, folder), true);
+  assert.equal(isPathWithinWorkspace(`${DEFAULT_WORKSPACE_ROOT}/board-2/Inbox.md`, folder), false);
+});
+
+void test('new board storage avoids folders left behind by deleted boards', async () => {
+  const existing = new Set([`${DEFAULT_WORKSPACE_ROOT}/board-2`]);
+  const board = await createBoardDefinitionWithAvailableFolder({
+    id: 'new',
+    name: 'Board 2',
+    workspaceRoot: DEFAULT_WORKSPACE_ROOT,
+    occupiedFolders: new Set(),
+  }, async (path: string) => existing.has(path));
+  assert.equal(board.source.folder, `${DEFAULT_WORKSPACE_ROOT}/board-2-2`);
 });
 
 void test('board folders remain unique after a board is deleted and recreated', () => {
