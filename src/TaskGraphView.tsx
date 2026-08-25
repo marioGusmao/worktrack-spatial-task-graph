@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Menu, Notice, TFile } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Menu, Notice, TFile, debounce } from 'obsidian';
 import * as React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import ReactFlow, { 
@@ -22,7 +22,7 @@ import ReactFlow, {
 
 import TaskGraphPlugin, { GraphBoard } from './main';
 
-export const VIEW_TYPE_TASK_GRAPH = 'task-graph-view';
+export const VIEW_TYPE_TASK_GRAPH = 'worktrack-task-graph-view';
 
 interface TaskNodeData {
     id: string; label: string; notes: string; status: string; file: string; path: string; line: number; endLine: number; customStatus: string;
@@ -230,7 +230,7 @@ interface ControlPanelProps {
     boards: GraphBoard[];
     activeBoardId: string;
     onSwitchBoard: (id: string) => void;
-    onAddBoard: () => void;
+    onAddBoard: () => Promise<void>;
     onRenameBoard: (name: string) => Promise<void>;
     onDeleteBoard: (id: string) => Promise<void>;
     onAutoLayout: () => Promise<void>;
@@ -513,11 +513,9 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
   
   const reactFlowInstance = useReactFlow();
   const debouncedSaveBoardData = React.useMemo(
-      () => import('obsidian').then(({ debounce }) => 
-          debounce((boardId: string, data: Partial<GraphBoard['data']>) => {
-              void plugin.saveBoardData(boardId, data);
-          }, 800, true)
-      ),
+      () => Promise.resolve(debounce((boardId: string, data: Partial<GraphBoard['data']>) => {
+          void plugin.saveBoardData(boardId, data);
+      }, 800, true)),
       [plugin]
   );
   const connectionStartRef = React.useRef<Partial<OnConnectStartParams>>({});
@@ -576,9 +574,9 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
           data: { id: tn.id, label: tn.text, onSave: handleSaveTextNode }
       }));
 
-      // 泛型合并后自动转推为 Node<AppNodeData>[]，消灭强制断言
+      const visibleNodeIds = new Set([...taskNodes, ...textNodes].map((node) => node.id));
       setNodes([...taskNodes, ...textNodes] as AppNode[]);
-      setEdges(savedEdges);
+      setEdges(savedEdges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)));
 
       if (prevBoardIdRef.current !== activeBoardId) {
           const savedViewport = boardConfig?.data.viewport;
@@ -817,7 +815,11 @@ const TaskGraphComponent = ({ plugin, view }: { plugin: TaskGraphPlugin, view: T
 
   const handleSwitchBoard = (id: string) => { setActiveBoardId(id); plugin.settings.lastActiveBoardId = id; void plugin.saveSettings(); };
   
-  const handleAddBoard = () => { const newBoard: GraphBoard = { id: Date.now().toString(), name: `Board ${plugin.settings.boards.length + 1}`, filters: { tags: [], excludeTags: [], folders: [], status: [' ', '/'], tagMode: 'OR' }, data: { layout: {}, edges: [], nodeStatus: {}, textNodes: [] } }; plugin.settings.boards.push(newBoard); handleSwitchBoard(newBoard.id); };
+  const handleAddBoard = async () => {
+      const newBoard = await plugin.createBoard();
+      setActiveBoardId(newBoard.id);
+      setRefreshKey(prev => prev + 1);
+  };
   
   const handleDeleteBoard = async (id: string) => { 
       const newBoards = plugin.settings.boards.filter(b => b.id !== id); 

@@ -1,9 +1,17 @@
 import { Plugin, WorkspaceLeaf, TFile, debounce, Notice } from 'obsidian';
-import type { Edge, Viewport } from 'reactflow';
 import { TaskGraphView, VIEW_TYPE_TASK_GRAPH } from './TaskGraphView';
 import { TaskGraphSettingTab } from './settings';
+import {
+    SerialExecutor,
+    createBoardDefinitionWithAvailableFolder,
+    ensureBoardStorage as ensureBoardStorageFiles,
+    isPathWithinWorkspace,
+    migrateSettings,
+    type GraphBoard,
+    type TaskGraphSettings,
+} from './board-config';
 
-export interface TextNodeData { id: string; text: string; x: number; y: number; }
+export type { GraphBoard } from './board-config';
 
 export interface TaskCacheItem {
     id: string;
@@ -17,39 +25,14 @@ export interface TaskCacheItem {
     rawText: string;
 }
 
-export interface GraphBoard {
-	id: string; name: string;
-	filters: { tags: string[]; excludeTags: string[]; folders: string[]; status: string[]; tagMode?: 'AND' | 'OR'; };
-	data: { layout: Record<string, { x: number, y: number }>; edges: Edge[]; nodeStatus: Record<string, string>; textNodes: TextNodeData[]; viewport?: Viewport; }
-}
-
-interface TaskGraphSettings { 
-    boards: GraphBoard[]; 
-    lastActiveBoardId: string; 
-    autoFitAfterLayout: boolean; // 新增：排版后是否自动缩放
-}
-
-interface CachedFilesMetadataCache {
-    getCachedFiles(): string[];
-}
-
-const DEFAULT_BOARD: GraphBoard = {
-	id: 'default', name: 'Main board',
-	filters: { tags: [], excludeTags: [], folders: [], status: [' ', '/'], tagMode: 'OR' },
-	data: { layout: {}, edges: [], nodeStatus: {}, textNodes: [] }
-};
-const DEFAULT_SETTINGS: TaskGraphSettings = { 
-    boards: [DEFAULT_BOARD], 
-    lastActiveBoardId: 'default',
-    autoFitAfterLayout: true // 默认开启
-};
-
 export default class TaskGraphPlugin extends Plugin {
 	settings: TaskGraphSettings;
 	viewRefresh?: () => void;
     
     taskCache: Map<string, TaskCacheItem[]> = new Map();
     isCacheInitialized: boolean = false;
+    cacheGeneration: number = 0;
+    private boardCreationExecutor = new SerialExecutor();
 
 	debouncedRefresh = debounce(() => {
 		if (this.viewRefresh) this.viewRefresh();
@@ -57,6 +40,7 @@ export default class TaskGraphPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+        await this.ensureBoardStorageForAll();
         
         this.addSettingTab(new TaskGraphSettingTab(this.app, this));
 
@@ -90,18 +74,26 @@ export default class TaskGraphPlugin extends Plugin {
             void this.updateFileCache(file);
         }));
         this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-            if (this.taskCache.has(oldPath)) {
-                const tasks = this.taskCache.get(oldPath);
-                this.taskCache.delete(oldPath);
-                if (tasks) this.taskCache.set(file.path, tasks);
-                this.debouncedRefresh();
+            let removed = false;
+            for (const cachedPath of this.taskCache.keys()) {
+                if (cachedPath === oldPath || cachedPath.startsWith(`${oldPath}/`)) {
+                    this.taskCache.delete(cachedPath);
+                    removed = true;
+                }
             }
+            if (removed) this.debouncedRefresh();
+            if (file instanceof TFile) void this.updateFileCache(file);
+            else void this.initializeCache();
         }));
         this.registerEvent(this.app.vault.on('delete', (file) => {
-            if (this.taskCache.has(file.path)) {
-                this.taskCache.delete(file.path);
-                this.debouncedRefresh();
+            let removed = false;
+            for (const cachedPath of this.taskCache.keys()) {
+                if (cachedPath === file.path || cachedPath.startsWith(`${file.path}/`)) {
+                    this.taskCache.delete(cachedPath);
+                    removed = true;
+                }
             }
+            if (removed) this.debouncedRefresh();
         }));
         
         this.app.workspace.onLayoutReady(() => {
@@ -110,20 +102,28 @@ export default class TaskGraphPlugin extends Plugin {
 	}
 
     async initializeCache() {
-        const cachedPaths = (this.app.metadataCache as unknown as CachedFilesMetadataCache).getCachedFiles();
-        for (const path of cachedPaths) {
-            if (!path.endsWith('.md')) continue;
-            const file = this.app.vault.getAbstractFileByPath(path);
-            if (file instanceof TFile) {
-                await this.updateFileCache(file, false);
-            }
+        const generation = ++this.cacheGeneration;
+        this.isCacheInitialized = false;
+        this.taskCache.clear();
+        const files = this.app.vault.getMarkdownFiles();
+        for (const file of files) {
+            if (!isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) continue;
+            await this.updateFileCache(file, false, generation);
+            if (generation !== this.cacheGeneration) return;
         }
         this.isCacheInitialized = true;
         this.debouncedRefresh();
     }
 
-    async updateFileCache(file: import('obsidian').TAbstractFile, triggerRefresh = true) {
-        if (!(file instanceof TFile) || file.extension !== 'md') return;
+    async updateFileCache(file: import('obsidian').TAbstractFile, triggerRefresh = true, generation = this.cacheGeneration) {
+        if (generation !== this.cacheGeneration) return;
+        if (!(file instanceof TFile) || file.extension !== 'md' || !isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) {
+            if (this.taskCache.has(file.path)) {
+                this.taskCache.delete(file.path);
+                if (triggerRefresh && this.isCacheInitialized) this.debouncedRefresh();
+            }
+            return;
+        }
         
         const cache = this.app.metadataCache.getFileCache(file);
         if (!cache || !cache.listItems) {
@@ -207,6 +207,7 @@ export default class TaskGraphPlugin extends Plugin {
             });
         }
 
+        if (generation !== this.cacheGeneration || !isPathWithinWorkspace(file.path, this.settings.workspaceRoot)) return;
         this.taskCache.set(file.path, tasks);
         if (triggerRefresh && this.isCacheInitialized) {
             this.debouncedRefresh();
@@ -216,17 +217,48 @@ export default class TaskGraphPlugin extends Plugin {
 	onunload() { }
 
 	async loadSettings() {
-        // 使用类型断言将 any 显式收敛为我们的目标类型
         const loadedData = (await this.loadData()) as Partial<TaskGraphSettings> | null;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData);
-		if (!this.settings.boards || this.settings.boards.length === 0) {
-			this.settings.boards = [DEFAULT_BOARD];
-		}
+        this.settings = migrateSettings(loadedData);
+        if (JSON.stringify(loadedData) !== JSON.stringify(this.settings)) {
+            await this.saveSettings();
+        }
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
+
+    async ensureBoardStorage(board: GraphBoard) {
+        await ensureBoardStorageFiles({
+            exists: (path) => this.app.vault.adapter.exists(path),
+            createFolder: async (path) => { await this.app.vault.createFolder(path); },
+            createFile: async (path, content) => { await this.app.vault.create(path, content); },
+        }, board);
+    }
+
+    async ensureBoardStorageForAll() {
+        for (const board of this.settings.boards) {
+            await this.ensureBoardStorage(board);
+        }
+    }
+
+    async createBoard(name?: string): Promise<GraphBoard> {
+        return this.boardCreationExecutor.run(async () => {
+        const boardName = name?.trim() || `Board ${this.settings.boards.length + 1}`;
+        const occupiedFolders = new Set(this.settings.boards.map((board) => board.source.folder));
+        const board = await createBoardDefinitionWithAvailableFolder({
+            id: `${Date.now()}-${this.settings.boards.length}`,
+            name: boardName,
+            workspaceRoot: this.settings.workspaceRoot,
+            occupiedFolders,
+        }, (path) => this.app.vault.adapter.exists(path));
+        await this.ensureBoardStorage(board);
+        this.settings.boards.push(board);
+        this.settings.lastActiveBoardId = board.id;
+        await this.saveSettings();
+        return board;
+        });
+    }
 
 	async activateView() {
 		const { workspace } = this.app;
@@ -368,7 +400,7 @@ export default class TaskGraphPlugin extends Plugin {
 		const filters = board.filters;
         
 		const connectedTaskIds = new Set<string>();
-		board.data.edges.forEach((e: Edge) => { 
+		board.data.edges.forEach((e) => {
 			connectedTaskIds.add(e.source);
 			connectedTaskIds.add(e.target);
 		});
@@ -377,7 +409,7 @@ export default class TaskGraphPlugin extends Plugin {
 
         for (const [path, fileTasks] of this.taskCache.entries()) {
             
-            if (filters.folders.length > 0 && !filters.folders.some(folder => path.startsWith(folder))) {
+            if (filters.folders.length > 0 && !filters.folders.some(folder => isPathWithinWorkspace(path, folder))) {
                 continue;
             }
 

@@ -21,6 +21,7 @@
         "strictNullChecks": true,
         "strictBindCallApply": true,
         "allowSyntheticDefaultImports": true,
+        "allowImportingTsExtensions": true,
         "useUnknownInCatchVariables": true,
         "lib": [
             "DOM",
@@ -31,6 +32,7 @@
         "forceConsistentCasingInFileNames": true
     },
     "include": [
-        "src/**/*" 
+        "src/**/*",
+        "tests/**/*"
     ]
 }

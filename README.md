@@ -1,4 +1,6 @@
-# Spatial Task Graph
+# Spatial Task Graph — WorkTrack
+
+> Maintained downstream fork of [CccJhuan/spatial-task-graph](https://github.com/CccJhuan/spatial-task-graph). The WorkTrack build uses a distinct Obsidian plugin ID, indexes only `Sub pastas/Spatial Task Graph`, and gives newly created boards their own folder and `Inbox.md`. Generic fixes should be proposed upstream when practical.
 
 Spatial Task Graph transforms your linear markdown tasks into a dynamic, interactive infinite canvas. Visualize dependencies, manage workflows with a Kanban-style sidebar, and organize your thoughts spatially—all with a premium Apple-style aesthetic.
 
@@ -41,8 +43,8 @@ Right-click any task node to quickly change its priority or status color via the
 ## 🚀 Installation
 
 ### Manual Installation
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [Latest Release](https://github.com/your-repo/releases).
-2. Create a folder `spatial-task-graph` in your vault's `.obsidian/plugins/` directory.
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [Latest Release](https://github.com/marioGusmao/worktrack-spatial-task-graph/releases/latest).
+2. Create a folder `worktrack-spatial-task-graph` in your vault's `.obsidian/plugins/` directory.
 3. Move the files into that folder.
 4. Reload Obsidian and enable the plugin.
 
@@ -62,6 +64,10 @@ Spatial Task Graph indexes markdown task list items locally so it can render you
 * Type `#` to autocomplete tags.
 * Use the metadata toolbar to insert Dates (📅), Priorities (🔺), and more.
 * Right-click a task node to quickly change its status color via the context menu.
+
+## Downstream maintenance
+
+The fork keeps `origin` pointed at `marioGusmao/worktrack-spatial-task-graph` and `upstream` pointed at the original repository. To review an upstream release, fetch tags, create a `refactor/sync-upstream-<version>` branch, merge `upstream/master` there, run `npm ci && npm run check`, and open a pull request. Never update the deployed Obsidian plugin directly from the community release.
 
 ## 🤝 Contributing
 Contributions are welcome! Please create an issue or submit a Pull Request.
