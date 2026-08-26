@@ -86,6 +86,16 @@ npm run build
   ```
 - Reload Obsidian and enable the plugin in **Settings → Community plugins**.
 
+### WorkTrack baseline gate
+
+Before starting any code change or test cycle for this fork:
+
+1. Update the WorkTrack vault to the latest published downstream release.
+2. Confirm the installed plugin ID, version, and enabled state.
+3. Open the task graph and verify the configured boards and fixed workspace root.
+4. Check Obsidian developer errors and unresolved links.
+5. Only then modify source code. After publishing a release, install it in WorkTrack and repeat the smoke test.
+
 ## Commands & settings
 
 - Any user-facing commands should be added via `this.addCommand(...)`.
